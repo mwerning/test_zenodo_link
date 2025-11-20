@@ -7,50 +7,65 @@ on:
 jobs:
   upload-to-zenodo:
     runs-on: ubuntu-latest
+
     steps:
-      # Step 1: Checkout the repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 2: Install dependencies
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y curl jq
 
-      # Step 3: Upload Excel to Zenodo
-      - name: Upload Excel
+      - name: Upload Excel to Zenodo
         env:
           ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
         run: |
-          # Zenodo API endpoint
           ZENODO_API="https://zenodo.org/api/deposit/depositions"
 
-          # Metadata
-          TITLE="Excel Dataset - ${{ github.event.release.tag_name }}"
+          TITLE="Excel Dataset – ${{ github.event.release.tag_name }}"
           DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}."
-          CREATORS='[{"name": "Author One"},{"name": "Author Two"}]'
+          CREATORS='[{"name": "Author One"}, {"name": "Author Two"}]'
           FILE_PATH="Test_data_for_Zenodo.xlsx"
 
-          # Create a new Zenodo deposition (draft)
-          DEPOSITION_ID=$(curl -s -X POST $ZENODO_API \
+          # 1. Create a new deposition
+          CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
-            -d "{\"metadata\": {\"title\": \"$TITLE\", \"upload_type\": \"dataset\", \"description\": \"$DESCRIPTION\", \"creators\": $CREATORS}}" \
-            | jq -r '.id')
+            -d "{
+              \"metadata\": {
+                \"title\": \"$TITLE\",
+                \"upload_type\": \"dataset\",
+                \"description\": \"$DESCRIPTION\",
+                \"creators\": $CREATORS
+              }
+            }")
 
-          echo "Created Zenodo deposition with ID $DEPOSITION_ID"
+          echo "Create response: $CREATE_RESPONSE"
 
-          # Upload the Excel file
-          curl -s -X PUT "$ZENODO_API/$DEPOSITION_ID/files?filename=$(basename $FILE_PATH)" \
+          DEPOSITION_ID=$(echo "$CREATE_RESPONSE" | jq -r '.id')
+          BUCKET_URL=$(echo "$CREATE_RESPONSE" | jq -r '.links.bucket')
+
+          if [ -z "$DEPOSITION_ID" ] || [ "$DEPOSITION_ID" = "null" ]; then
+            echo "ERROR: Could not create deposition."
+            exit 1
+          fi
+          echo "Created deposition: $DEPOSITION_ID"
+          echo "Upload bucket: $BUCKET_URL"
+
+          # 2. Upload the file to the deposition’s bucket
+          curl --fail -X PUT "${BUCKET_URL}/$(basename $FILE_PATH)" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
             --upload-file "$FILE_PATH"
 
-          echo "Excel file uploaded: $FILE_PATH"
+          echo "File uploaded to Zenodo bucket."
 
-          # Publish the deposition to get a DOI
-          DOI=$(curl -s -X POST "$ZENODO_API/$DEPOSITION_ID/actions/publish" \
-            -H "Authorization: Bearer $ZENODO_TOKEN" \
-            | jq -r '.doi')
+          # 3. Publish the deposition
+          PUBLISH_RESPONSE=$(curl -s -X POST \
+            "$ZENODO_API/$DEPOSITION_ID/actions/publish" \
+            -H "Authorization: Bearer $ZENODO_TOKEN")
 
-          echo "Zenodo record published! DOI: $DOI"
+          echo "Publish response: $PUBLISH_RESPONSE"
+
+          DOI=$(echo "$PUBLISH_RESPONSE" | jq -r '.doi')
+          echo "Published to Zenodo with DOI: $DOI"
