@@ -1,5 +1,8 @@
 name: Upload Excel to Zenodo
 
+permissions:
+  contents: write
+
 on:
   release:
     types: [published]
