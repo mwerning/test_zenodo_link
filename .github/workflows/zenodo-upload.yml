@@ -36,7 +36,7 @@ jobs:
           DEPOSITION_ID=$(curl -s -X POST $ZENODO_API \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
-            -d "{\"metadata\": {\"title\": \"$TITLE\", \"upload_type\": \"dataset\", \"description\": \"$DESCRIPTION\", \"creators\": $CREATORS}}}" \
+            -d "{\"metadata\": {\"title\": \"$TITLE\", \"upload_type\": \"dataset\", \"description\": \"$DESCRIPTION\", \"creators\": $CREATORS}}" \
             | jq -r '.id')
 
           echo "Created Zenodo deposition with ID $DEPOSITION_ID"
