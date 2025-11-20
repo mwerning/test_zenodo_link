@@ -45,11 +45,6 @@ jobs:
           # REQUIRED license
           LICENSE="cc-by-4.0"
 
-          # OPTIONAL communities (comment out whole line if unused)
-          # COMMUNITIES='[
-          #   { "identifier": "climate-change" }
-          # ]'
-
           RELATED_IDENTIFIERS="[
             {
               \"relation\": \"isSupplementTo\",
@@ -76,7 +71,6 @@ jobs:
                 \"description\": \"$DESCRIPTION\",
                 \"creators\": $CREATORS,
                 \"license\": \"$LICENSE\",
-                # \"communities\": $COMMUNITIES,
                 \"related_identifiers\": $RELATED_IDENTIFIERS,
                 \"language\": \"$LANGUAGE\"
               }
