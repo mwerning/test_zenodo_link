@@ -42,13 +42,38 @@ jobs:
 
           LANGUAGE="eng"
 
-          # ----- CREATE OR LOAD DEPOSITION -----
-          if [ -f "$DEPOSITION_FILE" ]; then
-            DEPOSITION_ID=$(cat "$DEPOSITION_FILE")
-            echo "Updating existing Zenodo deposition: $DEPOSITION_ID"
+                    # ----- CHECK IF A PRIOR DEPOSITION EXISTS -----
+          if [ -f ".zenodo_deposition_id" ]; then
+            echo "Found existing Zenodo deposition ID."
+            DEPOSITION_ID=$(cat .zenodo_deposition_id)
+
+            echo "Requesting a new version from Zenodo..."
+            NEWVERSION_RESPONSE=$(curl -s -X POST \
+              "$ZENODO_API/$DEPOSITION_ID/actions/newversion" \
+              -H "Authorization: Bearer $ZENODO_TOKEN")
+
+            echo "Newversion response: $NEWVERSION_RESPONSE"
+
+            # Get the URL to the new draft (links.latest_draft)
+            LATEST_DRAFT_URL=$(echo "$NEWVERSION_RESPONSE" | jq -r '.links.latest_draft')
+
+            # The new draft contains the new deposition ID → GET it
+            DRAFT_RESPONSE=$(curl -s -X GET "$LATEST_DRAFT_URL" \
+                -H "Authorization: Bearer $ZENODO_TOKEN")
+
+            echo "Draft response: $DRAFT_RESPONSE"
+
+            # Extract new deposition info
+            DEPOSITION_ID=$(echo "$DRAFT_RESPONSE" | jq -r '.id')
+            BUCKET_URL=$(echo "$DRAFT_RESPONSE" | jq -r '.links.bucket')
+
+            echo "New version deposition ID: $DEPOSITION_ID"
+            echo "Bucket URL: $BUCKET_URL"
+
           else
-            echo "Creating new Zenodo deposition..."
-            CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API_BASE" \
+            echo "No existing deposition — creating a fresh one."
+
+            CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API" \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $ZENODO_TOKEN" \
               -d "{
@@ -66,56 +91,18 @@ jobs:
             echo "Create response: $CREATE_RESPONSE"
 
             DEPOSITION_ID=$(echo "$CREATE_RESPONSE" | jq -r '.id')
+            BUCKET_URL=$(echo "$CREATE_RESPONSE" | jq -r '.links.bucket')
+
             if [ -z "$DEPOSITION_ID" ] || [ "$DEPOSITION_ID" = "null" ]; then
               echo "ERROR: Could not create deposition."
               exit 1
             fi
 
-            # Save deposition ID locally
-            echo "$DEPOSITION_ID" > "$DEPOSITION_FILE"
-            echo "Stored deposition ID in $DEPOSITION_FILE"
-
-            # Configure git and commit to the default branch
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add "$DEPOSITION_FILE"
-            git commit -m "Add Zenodo deposition ID"
-            git push origin main  # push explicitly to branch
+            # Save for future versions
+            echo "$DEPOSITION_ID" > .zenodo_deposition_id
+            git config user.email "github-actions@github.com"
+            git config user.name "github-actions"
+            git add .zenodo_deposition_id || true
+            git commit -m "Add Zenodo deposition ID" || true
+            git push || true
           fi
-
-          # ----- UPDATE METADATA -----
-          UPDATE_RESPONSE=$(curl -s -X PUT "$ZENODO_API_BASE/$DEPOSITION_ID" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $ZENODO_TOKEN" \
-            -d "{
-              \"metadata\": {
-                \"title\": \"$TITLE\",
-                \"upload_type\": \"dataset\",
-                \"description\": \"$DESCRIPTION\",
-                \"creators\": $CREATORS,
-                \"license\": \"$LICENSE\",
-                \"related_identifiers\": $RELATED_IDENTIFIERS,
-                \"language\": \"$LANGUAGE\"
-              }
-            }")
-
-          BUCKET_URL=$(echo "$UPDATE_RESPONSE" | jq -r '.links.bucket')
-          if [ -z "$BUCKET_URL" ] || [ "$BUCKET_URL" = "null" ]; then
-            echo "ERROR: Could not get bucket URL."
-            exit 1
-          fi
-
-          # ----- UPLOAD FILE TO BUCKET -----
-          curl --fail -X PUT "${BUCKET_URL}/$(basename $FILE_PATH)" \
-            -H "Authorization: Bearer $ZENODO_TOKEN" \
-            --upload-file "$FILE_PATH"
-
-          echo "File uploaded: $FILE_PATH"
-
-          # ----- PUBLISH RECORD -----
-          PUBLISH_RESPONSE=$(curl -s -X POST \
-            "$ZENODO_API_BASE/$DEPOSITION_ID/actions/publish" \
-            -H "Authorization: Bearer $ZENODO_TOKEN")
-
-          DOI=$(echo "$PUBLISH_RESPONSE" | jq -r '.doi')
-          echo "Published Zenodo DOI: $DOI"
