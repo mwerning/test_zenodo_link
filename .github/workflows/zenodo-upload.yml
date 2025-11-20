@@ -29,35 +29,12 @@ jobs:
           TITLE="Excel Dataset – ${{ github.event.release.tag_name }}"
           DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}. INSERT MORE DETAILED DESCRIPTION OF DATA IN HERE"
 
-          CREATORS='[
-            {
-              "name": "Michaela Werning",
-              "orcid": "0000-0002-8684-9608",
-              "affiliation": "International Institute for Applied Systems Analysis"
-            },
-            {
-              "name": "Second Author",
-              "orcid": "0000-0000-0000-0000",
-              "affiliation": "Institution Name"
-            }
-          ]'
-
           # REQUIRED license
           LICENSE="cc-by-4.0"
 
+          CREATORS='[{"name":"Michaela Werning","orcid":"0000-0002-8684-9608","affiliation":"International Institute for Applied Systems Analysis"}]'
 
-          RELATED_IDENTIFIERS="[
-            {
-              \"relation\": \"isSupplementTo\",
-              \"scheme\": \"url\",
-              \"identifier\": \"https://github.com/${{ github.repository }}\"
-            },
-            {
-              \"relation\": \"isDocumentedBy\",
-              \"scheme\": \"url\",
-              \"identifier\": \"https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }}\"
-            }
-          ]"
+          RELATED_IDENTIFIERS='[{"relation":"isSupplementTo","scheme":"url","identifier":"https://github.com/'"${{ github.repository }}"'"},{"relation":"isDocumentedBy","scheme":"url","identifier":"https://github.com/'"${{ github.repository }}"'/releases/tag/'"${{ github.event.release.tag_name }}"'"}]'
 
           LANGUAGE="eng"
 
