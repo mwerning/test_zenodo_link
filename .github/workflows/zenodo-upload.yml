@@ -15,7 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          ref: main  # replace with your default branch
+          ref: main  # replace with your default branch name
 
       - name: Install dependencies
         run: |
@@ -33,60 +33,50 @@ jobs:
           TITLE="Excel Dataset – ${{ github.event.release.tag_name }}"
           DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}. INSERT MORE DETAILED DESCRIPTION OF DATA IN HERE"
 
-          # Minified JSON to avoid syntax issues
           CREATORS='[{"name":"Michaela Werning","orcid":"0000-0000-0000-0000","affiliation":"International Institute for Applied Systems Analysis"},{"name":"Second Author","orcid":"0000-0000-0000-0000","affiliation":"Institution Name"}]'
-
           LICENSE="cc-by-4.0"
-
           RELATED_IDENTIFIERS='[{"relation":"isSupplementTo","scheme":"url","identifier":"https://github.com/${{ github.repository }}"},{"relation":"isDocumentedBy","scheme":"url","identifier":"https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }}"}]'
-
           LANGUAGE="eng"
 
-                    # ----- CHECK IF A PRIOR DEPOSITION EXISTS -----
-                    if [ -f ".zenodo_deposition_id" ]; then
+          # ----- CHECK IF PREVIOUS DEPOSITION EXISTS -----
+          if [ -f "$DEPOSITION_FILE" ]; then
             echo "Found existing Zenodo deposition ID."
-            BASE_DEPOSITION_ID=$(cat .zenodo_deposition_id)
+            BASE_DEPOSITION_ID=$(cat "$DEPOSITION_FILE")
 
             echo "Requesting a new version from Zenodo..."
 
             NEWVERSION_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-              "$ZENODO_API/$BASE_DEPOSITION_ID/actions/newversion" \
+              "$ZENODO_API_BASE/$BASE_DEPOSITION_ID/actions/newversion" \
               -H "Authorization: Bearer $ZENODO_TOKEN")
 
-            # Split body and status code
             HTTP_BODY=$(echo "$NEWVERSION_RESPONSE" | head -n -1)
             HTTP_STATUS=$(echo "$NEWVERSION_RESPONSE" | tail -n 1)
 
             echo "Status: $HTTP_STATUS"
             echo "Response body: $HTTP_BODY"
 
-            # ---- ERROR HANDLING ----
             if [ "$HTTP_STATUS" -ge 400 ]; then
               echo "❌ ERROR: Zenodo newversion request failed (status $HTTP_STATUS)"
               exit 3
             fi
 
-            # Check if body is valid JSON
             if ! echo "$HTTP_BODY" | jq empty >/dev/null 2>&1; then
-              echo "❌ ERROR: Zenodo returned non-JSON (likely 504/HTML error)."
+              echo "❌ ERROR: Zenodo returned non-JSON (likely 504/HTML)."
               echo "Body was: $HTTP_BODY"
               exit 3
             fi
 
-            # Extract latest_draft URL
             LATEST_DRAFT_URL=$(echo "$HTTP_BODY" | jq -r '.links.latest_draft')
 
             echo "Fetching new draft metadata..."
-            DRAFT_RESPONSE=$(curl -s -X GET "$LATEST_DRAFT_URL" \
-                -H "Authorization: Bearer $ZENODO_TOKEN")
+            DRAFT_RESPONSE=$(curl -s "$LATEST_DRAFT_URL" \
+              -H "Authorization: Bearer $ZENODO_TOKEN")
 
-            # Validate JSON
             if ! echo "$DRAFT_RESPONSE" | jq empty >/dev/null 2>&1; then
               echo "❌ ERROR: Draft metadata is not valid JSON."
               exit 3
             fi
 
-            # Extract new version deposition ID and bucket URL
             DEPOSITION_ID=$(echo "$DRAFT_RESPONSE" | jq -r '.id')
             BUCKET_URL=$(echo "$DRAFT_RESPONSE" | jq -r '.links.bucket')
 
@@ -96,7 +86,7 @@ jobs:
           else
             echo "No existing deposition — creating a fresh one."
 
-            CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API" \
+            CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API_BASE" \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $ZENODO_TOKEN" \
               -d "{
@@ -121,11 +111,11 @@ jobs:
               exit 1
             fi
 
-            # Save for future versions
-            echo "$DEPOSITION_ID" > .zenodo_deposition_id
+            echo "$DEPOSITION_ID" > "$DEPOSITION_FILE"
             git config user.email "github-actions@github.com"
             git config user.name "github-actions"
-            git add .zenodo_deposition_id || true
+            git add "$DEPOSITION_FILE" || true
             git commit -m "Add Zenodo deposition ID" || true
             git push || true
+
           fi
