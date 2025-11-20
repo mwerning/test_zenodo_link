@@ -43,27 +43,50 @@ jobs:
           LANGUAGE="eng"
 
                     # ----- CHECK IF A PRIOR DEPOSITION EXISTS -----
-          if [ -f ".zenodo_deposition_id" ]; then
+                    if [ -f ".zenodo_deposition_id" ]; then
             echo "Found existing Zenodo deposition ID."
-            DEPOSITION_ID=$(cat .zenodo_deposition_id)
+            BASE_DEPOSITION_ID=$(cat .zenodo_deposition_id)
 
             echo "Requesting a new version from Zenodo..."
-            NEWVERSION_RESPONSE=$(curl -s -X POST \
-              "$ZENODO_API/$DEPOSITION_ID/actions/newversion" \
+
+            NEWVERSION_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+              "$ZENODO_API/$BASE_DEPOSITION_ID/actions/newversion" \
               -H "Authorization: Bearer $ZENODO_TOKEN")
 
-            echo "Newversion response: $NEWVERSION_RESPONSE"
+            # Split body and status code
+            HTTP_BODY=$(echo "$NEWVERSION_RESPONSE" | head -n -1)
+            HTTP_STATUS=$(echo "$NEWVERSION_RESPONSE" | tail -n 1)
 
-            # Get the URL to the new draft (links.latest_draft)
-            LATEST_DRAFT_URL=$(echo "$NEWVERSION_RESPONSE" | jq -r '.links.latest_draft')
+            echo "Status: $HTTP_STATUS"
+            echo "Response body: $HTTP_BODY"
 
-            # The new draft contains the new deposition ID → GET it
+            # ---- ERROR HANDLING ----
+            if [ "$HTTP_STATUS" -ge 400 ]; then
+              echo "❌ ERROR: Zenodo newversion request failed (status $HTTP_STATUS)"
+              exit 3
+            fi
+
+            # Check if body is valid JSON
+            if ! echo "$HTTP_BODY" | jq empty >/dev/null 2>&1; then
+              echo "❌ ERROR: Zenodo returned non-JSON (likely 504/HTML error)."
+              echo "Body was: $HTTP_BODY"
+              exit 3
+            fi
+
+            # Extract latest_draft URL
+            LATEST_DRAFT_URL=$(echo "$HTTP_BODY" | jq -r '.links.latest_draft')
+
+            echo "Fetching new draft metadata..."
             DRAFT_RESPONSE=$(curl -s -X GET "$LATEST_DRAFT_URL" \
                 -H "Authorization: Bearer $ZENODO_TOKEN")
 
-            echo "Draft response: $DRAFT_RESPONSE"
+            # Validate JSON
+            if ! echo "$DRAFT_RESPONSE" | jq empty >/dev/null 2>&1; then
+              echo "❌ ERROR: Draft metadata is not valid JSON."
+              exit 3
+            fi
 
-            # Extract new deposition info
+            # Extract new version deposition ID and bucket URL
             DEPOSITION_ID=$(echo "$DRAFT_RESPONSE" | jq -r '.id')
             BUCKET_URL=$(echo "$DRAFT_RESPONSE" | jq -r '.links.bucket')
 
