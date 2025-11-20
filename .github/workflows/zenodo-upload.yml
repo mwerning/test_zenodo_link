@@ -76,7 +76,7 @@ jobs:
                 \"description\": \"$DESCRIPTION\",
                 \"creators\": $CREATORS,
                 \"license\": \"$LICENSE\",
-                \"communities\": $COMMUNITIES,
+                # \"communities\": $COMMUNITIES,
                 \"related_identifiers\": $RELATED_IDENTIFIERS,
                 \"language\": \"$LANGUAGE\"
               }
