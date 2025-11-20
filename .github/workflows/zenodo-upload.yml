@@ -22,77 +22,82 @@ jobs:
           ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
         run: |
           ZENODO_API="https://zenodo.org/api/deposit/depositions"
+
           FILE_PATH="Test_data_for_Zenodo.xlsx"
 
+          # ----- METADATA -----
           TITLE="Excel Dataset – ${{ github.event.release.tag_name }}"
-          VERSION="${{ github.event.release.tag_name }}"
-          DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}."
+          DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}. INSERT MORE DETAILED DESCRIPTION OF DATA IN HERE"
 
-          # ----- CREATE METADATA.JSON -----
-          cat <<EOF > metadata.json
-{
-  "metadata": {
-    "title": "$TITLE",
-    "upload_type": "dataset",
-    "description": "$DESCRIPTION",
-    "version": "$VERSION",
-    "language": "eng",
-    "license": "cc-by-4.0",
-    "creators": [
-      {
-        "name": "Michaela Werning",
-        "orcid": "0000-0002-8684-9608",
-        "affiliation": "International Institute for Applied Systems Analysis"
-      },
-      {
-        "name": "Second Author",
-        "orcid": "0000-0000-0000-0000",
-        "affiliation": "Institution Name"
-      }
-    ],
-    "related_identifiers": [
-      {
-        "relation": "isSupplementTo",
-        "scheme": "url",
-        "identifier": "https://github.com/${{ github.repository }}"
-      },
-      {
-        "relation": "isDocumentedBy",
-        "scheme": "url",
-        "identifier": "https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }}"
-      }
-    ]
-  }
-}
-EOF
+          CREATORS='[
+            {
+              "name": "Michaela Werning",
+              "orcid": "0000-0002-8684-9608",
+              "affiliation": "International Institute for Applied Systems Analysis"
+            },
+            {
+              "name": "Second Author",
+              "orcid": "0000-0000-0000-0000",
+              "affiliation": "Institution Name"
+            }
+          ]'
 
-          echo "Generated metadata.json:"
-          cat metadata.json
+          # REQUIRED license
+          LICENSE="cc-by-4.0"
+
+
+          RELATED_IDENTIFIERS="[
+            {
+              \"relation\": \"isSupplementTo\",
+              \"scheme\": \"url\",
+              \"identifier\": \"https://github.com/${{ github.repository }}\"
+            },
+            {
+              \"relation\": \"isDocumentedBy\",
+              \"scheme\": \"url\",
+              \"identifier\": \"https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }}\"
+            }
+          ]"
+
+          LANGUAGE="eng"
 
           # ----- CREATE DEPOSITION -----
           CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
-            --data-binary @metadata.json)
+            -d "{
+              \"metadata\": {
+                \"title\": \"$TITLE\",
+                \"upload_type\": \"dataset\",
+                \"description\": \"$DESCRIPTION\",
+                \"creators\": $CREATORS,
+                \"license\": \"$LICENSE\",
+                \"related_identifiers\": $RELATED_IDENTIFIERS,
+                \"language\": \"$LANGUAGE\"
+              }
+            }")
 
           echo "Create response: $CREATE_RESPONSE"
 
           DEPOSITION_ID=$(echo "$CREATE_RESPONSE" | jq -r '.id')
           BUCKET_URL=$(echo "$CREATE_RESPONSE" | jq -r '.links.bucket')
 
-          if [ "$DEPOSITION_ID" = "null" ] || [ -z "$DEPOSITION_ID" ]; then
+          if [ -z "$DEPOSITION_ID" ] || [ "$DEPOSITION_ID" = "null" ]; then
             echo "ERROR: Could not create deposition."
             exit 1
           fi
 
           echo "Created deposition: $DEPOSITION_ID"
+          echo "Bucket URL: $BUCKET_URL"
 
-          # ----- UPLOAD FILE -----
+          # ----- UPLOAD FILE TO BUCKET -----
           curl --fail -X PUT "${BUCKET_URL}/$(basename $FILE_PATH)" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
             --upload-file "$FILE_PATH"
 
-          # ----- PUBLISH -----
+          echo "File uploaded: $FILE_PATH"
+
+          # ----- PUBLISH RECORD -----
           PUBLISH_RESPONSE=$(curl -s -X POST \
             "$ZENODO_API/$DEPOSITION_ID/actions/publish" \
             -H "Authorization: Bearer $ZENODO_TOKEN")
