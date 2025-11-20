@@ -1,0 +1,56 @@
+name: Upload Excel to Zenodo
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  upload-to-zenodo:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout the repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Install dependencies
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+
+      # Step 3: Upload Excel to Zenodo
+      - name: Upload Excel
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          # Zenodo API endpoint
+          ZENODO_API="https://zenodo.org/api/deposit/depositions"
+
+          # Metadata
+          TITLE="Excel Dataset - ${{ github.event.release.tag_name }}"
+          DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}."
+          CREATORS='[{"name": "Author One"},{"name": "Author Two"}]'
+          FILE_PATH="Test_data_for_Zenodo.xlsx"
+
+          # Create a new Zenodo deposition (draft)
+          DEPOSITION_ID=$(curl -s -X POST $ZENODO_API \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" \
+            -d "{\"metadata\": {\"title\": \"$TITLE\", \"upload_type\": \"dataset\", \"description\": \"$DESCRIPTION\", \"creators\": $CREATORS}}}" \
+            | jq -r '.id')
+
+          echo "Created Zenodo deposition with ID $DEPOSITION_ID"
+
+          # Upload the Excel file
+          curl -s -X PUT "$ZENODO_API/$DEPOSITION_ID/files?filename=$(basename $FILE_PATH)" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" \
+            --upload-file "$FILE_PATH"
+
+          echo "Excel file uploaded: $FILE_PATH"
+
+          # Publish the deposition to get a DOI
+          DOI=$(curl -s -X POST "$ZENODO_API/$DEPOSITION_ID/actions/publish" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" \
+            | jq -r '.doi')
+
+          echo "Zenodo record published! DOI: $DOI"
