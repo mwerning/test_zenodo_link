@@ -29,8 +29,6 @@ jobs:
           TITLE="Excel Dataset – ${{ github.event.release.tag_name }}"
           DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}. INSERT MORE DETAILED DESCRIPTION OF DATA IN HERE"
 
-          # Authors with ORCID & affiliations
-          # Add as many authors as needed
           CREATORS='[
             {
               "name": "Michaela Werning",
@@ -44,16 +42,14 @@ jobs:
             }
           ]'
 
-          # License (example: CC-BY-4.0)
-          # LICENSE="cc-by-4.0"
+          # REQUIRED license
+          LICENSE="cc-by-4.0"
 
-          # Zenodo communities (example)
+          # OPTIONAL communities (comment out whole line if unused)
           # COMMUNITIES='[
-          #   {"identifier": "climate-change"},
-          #   {"identifier": "ipcc"}
+          #   { "identifier": "climate-change" }
           # ]'
 
-          # Link to GitHub repo via related_identifiers
           RELATED_IDENTIFIERS="[
             {
               \"relation\": \"isSupplementTo\",
@@ -80,8 +76,9 @@ jobs:
                 \"description\": \"$DESCRIPTION\",
                 \"creators\": $CREATORS,
                 \"license\": \"$LICENSE\",
-                \"communities\": $COMMUNITIES,
-                \"related_identifiers\": $RELATED_IDENTIFIERS
+                # \"communities\": $COMMUNITIES,
+                \"related_identifiers\": $RELATED_IDENTIFIERS,
+                \"language\": \"$LANGUAGE\"
               }
             }")
 
@@ -114,4 +111,3 @@ jobs:
 
           DOI=$(echo "$PUBLISH_RESPONSE" | jq -r '.doi')
           echo "Published Zenodo DOI: $DOI"
-
