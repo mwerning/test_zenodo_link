@@ -23,12 +23,53 @@ jobs:
         run: |
           ZENODO_API="https://zenodo.org/api/deposit/depositions"
 
-          TITLE="Excel Dataset – ${{ github.event.release.tag_name }}"
-          DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}."
-          CREATORS='[{"name": "Author One"}, {"name": "Author Two"}]'
           FILE_PATH="Test_data_for_Zenodo.xlsx"
 
-          # 1. Create a new deposition
+          # ----- METADATA -----
+          TITLE="Excel Dataset – ${{ github.event.release.tag_name }}"
+          DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}. INSERT MORE DETAILED DESCRIPTION OF DATA IN HERE"
+
+          # Authors with ORCID & affiliations
+          # Add as many authors as needed
+          CREATORS='[
+            {
+              "name": "Michaela Werning",
+              "orcid": "0000-0002-8684-9608",
+              "affiliation": "International Institute for Applied Systems Analysis"
+            },
+            {
+              "name": "Second Author",
+              "orcid": "0000-0000-0000-0000",
+              "affiliation": "Institution Name"
+            }
+          ]'
+
+          # License (example: CC-BY-4.0)
+          # LICENSE="cc-by-4.0"
+
+          # Zenodo communities (example)
+          # COMMUNITIES='[
+          #   {"identifier": "climate-change"},
+          #   {"identifier": "ipcc"}
+          # ]'
+
+          # Link to GitHub repo via related_identifiers
+          RELATED_IDENTIFIERS="[
+            {
+              \"relation\": \"isSupplementTo\",
+              \"scheme\": \"url\",
+              \"identifier\": \"https://github.com/${{ github.repository }}\"
+            },
+            {
+              \"relation\": \"isDocumentedBy\",
+              \"scheme\": \"url\",
+              \"identifier\": \"https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }}\"
+            }
+          ]"
+
+          LANGUAGE="eng"
+
+          # ----- CREATE DEPOSITION -----
           CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
@@ -37,7 +78,10 @@ jobs:
                 \"title\": \"$TITLE\",
                 \"upload_type\": \"dataset\",
                 \"description\": \"$DESCRIPTION\",
-                \"creators\": $CREATORS
+                \"creators\": $CREATORS,
+                \"license\": \"$LICENSE\",
+                \"communities\": $COMMUNITIES,
+                \"related_identifiers\": $RELATED_IDENTIFIERS
               }
             }")
 
@@ -50,17 +94,18 @@ jobs:
             echo "ERROR: Could not create deposition."
             exit 1
           fi
-          echo "Created deposition: $DEPOSITION_ID"
-          echo "Upload bucket: $BUCKET_URL"
 
-          # 2. Upload the file to the deposition’s bucket
+          echo "Created deposition: $DEPOSITION_ID"
+          echo "Bucket URL: $BUCKET_URL"
+
+          # ----- UPLOAD FILE TO BUCKET -----
           curl --fail -X PUT "${BUCKET_URL}/$(basename $FILE_PATH)" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
             --upload-file "$FILE_PATH"
 
-          echo "File uploaded to Zenodo bucket."
+          echo "File uploaded: $FILE_PATH"
 
-          # 3. Publish the deposition
+          # ----- PUBLISH RECORD -----
           PUBLISH_RESPONSE=$(curl -s -X POST \
             "$ZENODO_API/$DEPOSITION_ID/actions/publish" \
             -H "Authorization: Bearer $ZENODO_TOKEN")
@@ -68,4 +113,5 @@ jobs:
           echo "Publish response: $PUBLISH_RESPONSE"
 
           DOI=$(echo "$PUBLISH_RESPONSE" | jq -r '.doi')
-          echo "Published to Zenodo with DOI: $DOI"
+          echo "Published Zenodo DOI: $DOI"
+
