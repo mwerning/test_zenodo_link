@@ -27,67 +27,32 @@ jobs:
           ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
         run: |
           FILE_PATH="Test_data_for_Zenodo.xlsx"
-          DEPOSITION_FILE=".zenodo_deposition_id"
-          ZENODO_API_BASE="https://zenodo.org/api/deposit/depositions"
+          ZENODO_API="https://zenodo.org/api/deposit/depositions"
+          ID_FILE=".zenodo_concept_id"
 
           TITLE="Excel Dataset – ${{ github.event.release.tag_name }}"
           DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}."
+          
+          CREATORS='[
+            {"name":"Michaela Werning","orcid":"0000-0002-8684-9608","affiliation":"International Institute for Applied Systems Analysis"},
+            {"name":"Second Author","orcid":"0000-0000-0000-0000","affiliation":"Institution Name"}
+          ]'
 
-          CREATORS='[{"name":"Michaela Werning","orcid":"0000-0000-0000-0000","affiliation":"International Institute for Applied Systems Analysis"},{"name":"Second Author","orcid":"0000-0000-0000-0000","affiliation":"Institution Name"}]'
+          RELATED_IDENTIFIERS='[
+            {"relation":"isSupplementTo","scheme":"url","identifier":"https://github.com/${{ github.repository }}"},
+            {"relation":"isDocumentedBy","scheme":"url","identifier":"https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }}"}
+          ]'
 
           LICENSE="cc-by-4.0"
-
-          RELATED_IDENTIFIERS='[{"relation":"isSupplementTo","scheme":"url","identifier":"https://github.com/${{ github.repository }}"},{"relation":"isDocumentedBy","scheme":"url","identifier":"https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }}"}]'
-
           LANGUAGE="eng"
 
-          # --------------------------------------------------------------------
-          # 1. REQUEST NEW VERSION IF DEPOSITION EXISTS
-          # --------------------------------------------------------------------
-          if [ -f ".zenodo_deposition_id" ]; then
-            echo "Found existing Zenodo deposition ID."
-            BASE_DEPOSITION_ID=$(cat .zenodo_deposition_id)
+          # ----------------------------------------------------------
+          # STEP 1: If NO concept ID exists -> create first deposition
+          # ----------------------------------------------------------
+          if [ ! -f "$ID_FILE" ]; then
+            echo "No concept ID found — creating first Zenodo deposition."
 
-            echo "Requesting a new version from Zenodo..."
-
-            NEWVERSION_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-              "$ZENODO_API_BASE/$BASE_DEPOSITION_ID/actions/newversion" \
-              -H "Authorization: Bearer $ZENODO_TOKEN")
-
-            HTTP_BODY=$(echo "$NEWVERSION_RESPONSE" | head -n -1)
-            HTTP_STATUS=$(echo "$NEWVERSION_RESPONSE" | tail -n 1)
-
-            echo "Status: $HTTP_STATUS"
-            echo "Response: $HTTP_BODY"
-
-            if [ "$HTTP_STATUS" -ge 400 ]; then
-              echo "❌ ERROR requesting new version."
-              exit 3
-            fi
-
-            if ! echo "$HTTP_BODY" | jq empty >/dev/null 2>&1; then
-              echo "❌ ERROR: Zenodo returned non-JSON."
-              exit 3
-            fi
-
-            LATEST_DRAFT_URL=$(echo "$HTTP_BODY" | jq -r '.links.latest_draft')
-
-            DRAFT_RESPONSE=$(curl -s -X GET "$LATEST_DRAFT_URL" \
-              -H "Authorization: Bearer $ZENODO_TOKEN")
-
-            DEPOSITION_ID=$(echo "$DRAFT_RESPONSE" | jq -r '.id')
-            BUCKET_URL=$(echo "$DRAFT_RESPONSE" | jq -r '.links.bucket')
-
-            echo "New version deposition ID: $DEPOSITION_ID"
-            echo "Bucket URL: $BUCKET_URL"
-
-          else
-            # ----------------------------------------------------------------
-            # 2. CREATE FIRST DEPOSITION
-            # ----------------------------------------------------------------
-            echo "No existing deposition — creating a fresh one."
-
-            CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API_BASE" \
+            CREATE_RESPONSE=$(curl -s -X POST "$ZENODO_API" \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $ZENODO_TOKEN" \
               -d "{
@@ -104,40 +69,60 @@ jobs:
 
             echo "Create response: $CREATE_RESPONSE"
 
+            CONCEPT_ID=$(echo "$CREATE_RESPONSE" | jq -r '.conceptrecid')
             DEPOSITION_ID=$(echo "$CREATE_RESPONSE" | jq -r '.id')
             BUCKET_URL=$(echo "$CREATE_RESPONSE" | jq -r '.links.bucket')
 
-            echo "$DEPOSITION_ID" > .zenodo_deposition_id
+            # Save concept ID permanently
+            echo "$CONCEPT_ID" > $ID_FILE
             git config user.email "github-actions@github.com"
             git config user.name "github-actions"
-            git add .zenodo_deposition_id
-            git commit -m "Add Zenodo deposition ID" || true
-            git push || true
+            git add $ID_FILE
+            git commit -m "Store Zenodo concept ID"
+            git push
+
+          else
+            # ----------------------------------------------------------
+            # STEP 2: Concept exists → request new version
+            # ----------------------------------------------------------
+            CONCEPT_ID=$(cat $ID_FILE)
+            echo "Using existing concept ID: $CONCEPT_ID"
+
+            echo "Requesting new version..."
+            NEW_RESPONSE=$(curl -s -X POST \
+              "$ZENODO_API/$CONCEPT_ID/actions/newversion" \
+              -H "Authorization: Bearer $ZENODO_TOKEN")
+
+            echo "Newversion response: $NEW_RESPONSE"
+
+            DEPOSITION_ID=$(echo "$NEW_RESPONSE" | jq -r '.record_id')
+            
+            # Fetch new draft
+            DRAFT=$(curl -s "$ZENODO_API/$DEPOSITION_ID" \
+              -H "Authorization: Bearer $ZENODO_TOKEN")
+
+            BUCKET_URL=$(echo "$DRAFT" | jq -r '.links.bucket')
           fi
 
+          echo "Deposition ID: $DEPOSITION_ID"
+          echo "Bucket URL: $BUCKET_URL"
 
-          # --------------------------------------------------------------------
-          # 3. UPLOAD FILE INTO THE BUCKET (NEW BLOCK)
-          # --------------------------------------------------------------------
-          echo "Uploading file to Zenodo…"
-
-          curl --fail -X PUT "${BUCKET_URL}/$(basename "$FILE_PATH")" \
+          # ----------------------------------------------------------
+          # STEP 3: Upload file
+          # ----------------------------------------------------------
+          echo "Uploading file..."
+          curl --fail -X PUT "${BUCKET_URL}/$(basename $FILE_PATH)" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
             --upload-file "$FILE_PATH"
 
-          echo "File uploaded: $FILE_PATH"
-
-
-          # --------------------------------------------------------------------
-          # 4. PUBLISH THE NEW VERSION (NEW BLOCK)
-          # --------------------------------------------------------------------
-          echo "Publishing deposition..."
-
-          PUBLISH_RESPONSE=$(curl -s -X POST \
-            "$ZENODO_API_BASE/$DEPOSITION_ID/actions/publish" \
+          # ----------------------------------------------------------
+          # STEP 4: Publish
+          # ----------------------------------------------------------
+          echo "Publishing..."
+          PUBLISH=$(curl -s -X POST \
+            "$ZENODO_API/$DEPOSITION_ID/actions/publish" \
             -H "Authorization: Bearer $ZENODO_TOKEN")
 
-          echo "Publish response: $PUBLISH_RESPONSE"
-
-          DOI=$(echo "$PUBLISH_RESPONSE" | jq -r '.doi')
+          echo "Publish response: $PUBLISH"
+          DOI=$(echo "$PUBLISH" | jq -r '.doi')
           echo "Published DOI: $DOI"
