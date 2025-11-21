@@ -96,8 +96,8 @@ jobs:
             echo "Newversion response: $NEW_RESPONSE"
 
             DEPOSITION_ID=$(echo "$NEW_RESPONSE" | jq -r '.record_id')
-            
-            # Fetch new draft
+
+            # Fetch new draft deposition details
             DRAFT=$(curl -s "$ZENODO_API/$DEPOSITION_ID" \
               -H "Authorization: Bearer $ZENODO_TOKEN")
 
@@ -107,6 +107,7 @@ jobs:
           echo "Deposition ID: $DEPOSITION_ID"
           echo "Bucket URL: $BUCKET_URL"
 
+
           # ----------------------------------------------------------
           # STEP 3: Upload file
           # ----------------------------------------------------------
@@ -114,6 +115,31 @@ jobs:
           curl --fail -X PUT "${BUCKET_URL}/$(basename $FILE_PATH)" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
             --upload-file "$FILE_PATH"
+
+
+          # ----------------------------------------------------------
+          # STEP 3b: Wait until Zenodo registers the file
+          # ----------------------------------------------------------
+          echo "Waiting for Zenodo to register the uploaded file..."
+
+          for i in {1..20}; do
+            FILES=$(curl -s "$ZENODO_API/$DEPOSITION_ID" \
+                -H "Authorization: Bearer $ZENODO_TOKEN" | jq '.files | length')
+
+            if [ "$FILES" -gt 0 ]; then
+              echo "Zenodo registered the file."
+              break
+            fi
+
+            echo "File not yet registered... retrying ($i/20)"
+            sleep 3
+          done
+
+          if [ "$FILES" -eq 0 ]; then
+            echo "❌ ERROR: Zenodo never registered the uploaded file."
+            exit 1
+          fi
+
 
           # ----------------------------------------------------------
           # STEP 4: Publish
