@@ -34,8 +34,8 @@ jobs:
           DESCRIPTION="Automatically uploaded from GitHub release ${{ github.event.release.tag_name }} of repository ${{ github.repository }}."
 
           CREATORS='[
-            {"name":"Michaela Werning","orcid":"0000-0000-0000-0000","affiliation":"International Institute for Applied Systems Analysis"},
-            {"name":"Second Author","orcid":"0000-0000-0000-0000","affiliation":"Institution Name"}
+            {"name":"Michaela Werning","affiliation":"International Institute for Applied Systems Analysis"},
+            {"name":"Second Author", "affiliation":"Institution Name"}
           ]'
 
           RELATED_IDENTIFIERS='[
