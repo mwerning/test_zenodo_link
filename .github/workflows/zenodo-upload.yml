@@ -108,6 +108,9 @@ jobs:
             BUCKET_URL=$(echo "$DRAFT" | jq -r '.links.bucket')
 
             echo "$DEPOSITION_ID" > "$VERSION_FILE"
+
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
             git add "$VERSION_FILE"
             git commit -m "Update Zenodo latest deposition ID"
             git push
